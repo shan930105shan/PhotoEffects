@@ -87,7 +87,7 @@ import { ref, onMounted, onUnmounted } from 'vue';
 interface FilterBlock {
   id: number;
   label: string;
-  filterType: 'mosaic' | 'hueRotate' | 'invert' | 'grayscale'|'invert'  ;
+  filterType: 'mosaic' | 'hueRotate' | 'invert' | 'grayscale'| 'invert' ;
   width: number;
   height: number;
   x: number;
@@ -174,11 +174,10 @@ const handleMouseLeave = () => {
 // --- 圖片處理 (壓縮並裁剪為 9:16) ---
 const handleImageUpload = (event: Event) => {
   const input = event.target as HTMLInputElement;
-  // 💡 修正點：確保 input.files 存在且裡面真的有第一個檔案
   if (!input.files || input.files.length === 0 || !input.files[0]) return;
 
   loading.value = true;
-  const file = input.files[0]; // 此時 TypeScript 確信它絕對是 File 型別（繼承自 Blob）
+  const file = input.files[0];
   const reader = new FileReader();
 
   reader.onload = (e) => {
@@ -214,16 +213,15 @@ const handleImageUpload = (event: Event) => {
 
 // --- 初始化方塊數據 ---
 const initBlocks = () => {
-  const types: FilterBlock['filterType'][] = ['mosaic', 'hueRotate', 'invert', 'grayscale'];
-  const labels = ['Mosaic', 'HueRotate', 'Invert', 'Grayscale'];
+  const types: FilterBlock['filterType'][] = ['mosaic', 'hueRotate', 'invert', 'grayscale', 'invert'];
+  const labels = ['Mosaic', 'HueRotate', 'Invert', 'Grayscale', 'Invert'];
 
   blocks.value = types.map((type, index) => {
     const width = Math.random() * 60 + 100;  // 100 ~ 160
     const height = Math.random() * 60 + 100; // 100 ~ 160
     return {
       id: index,
-      // 💡 修正點：加上 || '' 確保萬一超出索引時，拿到的絕對是 string 而不是 undefined
-      label: labels[index] || 'Filter', 
+      label: labels[index] || 'Filter',
       filterType: type,
       width,
       height,
@@ -250,6 +248,7 @@ const updatePhysics = () => {
     let minDistance = ATTRACTION_RADIUS;
 
     blocks.value.forEach((block) => {
+      if (!block) return;
       const centerX = block.x + block.width / 2;
       const centerY = block.y + block.height / 2;
       const dist = Math.hypot(mousePos.x - centerX, mousePos.y - centerY);
@@ -267,6 +266,8 @@ const updatePhysics = () => {
 
   // --- B. 更新各個方塊位置與速度 ---
   blocks.value.forEach((block, i) => {
+    if (!block) return;
+
     if (now - block.lastToggle > block.interval) {
       block.isActive = !block.isActive;
       block.lastToggle = now;
@@ -304,12 +305,11 @@ const updatePhysics = () => {
     if (block.y <= 0) { block.y = 0; block.vy = Math.abs(block.vy); }
     if (block.y + block.height >= canvasHeight) { block.y = canvasHeight - block.height; block.vy = -Math.abs(block.vy); }
 
-    // D. 方塊間相互碰撞偵測
-    // D. 方塊間相互碰撞偵測
+    // D. 方塊間相互碰撞偵測 (解決 image_2ae791.png 的錯誤)
     for (let j = i + 1; j < blocks.value.length; j++) {
       const other = blocks.value[j];
       
-      // 💡 修正點：如果 other 不存在（undefined），直接跳過，消除 TS18048 錯誤
+      // 💡 關鍵修正點：顯式阻斷檢查，確保 other 絕對存在
       if (!other) continue;
 
       const overlapX = Math.min(block.x + block.width, other.x + other.width) - Math.max(block.x, other.x);
@@ -356,25 +356,24 @@ const updatePhysics = () => {
         other.vy = Math.max(-maxSpeed, Math.min(maxSpeed, other.vy));
       }
     }
-          
+  });
 
-  // --- E. 畫布渲染 (文字粒子與線條共用同一個 Canvas 上下文) ---
+  // --- E. 畫布渲染 ---
   const canvas = lineCanvasRef.value;
   if (canvas) {
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      // 每一幀都要清空畫布
       ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-      // F-1. 動態生成新文字粒子 (僅在有背景圖時生成)
+      // F-1. 動態生成新文字粒子
       if (now - lastSpawnTime > Math.random() * 800 + 500 && bgImage.value) {
         const filterWords = ['MOSAIC', 'HUE ROTATE', 'SHARPEN', 'GRAYSCALE', 'INVERT'];
-        const randomWord = filterWords[Math.floor(Math.random() * filterWords.length)];
+        const randomWord = filterWords[Math.floor(Math.random() * filterWords.length)] || 'FILTER';
         
         particles.value.push({
           id: nextParticleId++,
           text: randomWord,
-          baseX: canvasWidth / 2 + (Math.random() - 0.5) * 20, 
+          baseX: canvasWidth / 2 + (Math.random() - 0.5) * 40, 
           x: canvasWidth / 2,
           y: canvasHeight + 20,                               
           speedY: Math.random() * 0.4 + 0.3,                  
@@ -382,15 +381,19 @@ const updatePhysics = () => {
           angleSpeed: Math.random() * 0.03 + 0.02,            
           amplitude: 10,                                      
           opacity: 1.0,
-          fontSize: Math.floor(Math.random() * 4) + 8,       
-          color: textColors[Math.floor(Math.random() * textColors.length)]
+          fontSize: Math.floor(Math.random() * 4) + 12,       
+          // 💡 關鍵修正點：加上 || '#000000' 空值保護，修復 image_2ae7b1.png 的 TS2322 錯誤
+          color: textColors[Math.floor(Math.random() * textColors.length)] || '#000000'
         });
         lastSpawnTime = now;
       }
 
-      // F-2. 更新與繪製文字粒子
+      // F-2. 更新與繪製文字粒子 (解決 image_2ae7b1.png 中關於 'p' 的所有錯誤)
       for (let k = particles.value.length - 1; k >= 0; k--) {
         const p = particles.value[k];
+
+        // 💡 關鍵修正點：顯式阻斷檢查，確保 p 在後續邏輯中絕對存在
+        if (!p) continue;
 
         p.y -= p.speedY;        
         p.angle += p.angleSpeed; 
@@ -399,34 +402,33 @@ const updatePhysics = () => {
         p.amplitude = 15 + heightFactor * 110; 
         p.x = p.baseX + Math.sin(p.angle) * p.amplitude;
 
-        // 頂部淡出邏輯
-        if (p.y < 400) {
-          p.opacity = p.y / 400; 
+        if (p.y < 200) {
+          p.opacity = p.y / 200; 
         }
 
-        // 邊界溢出檢查與移除
         if (p.y < -20 || p.opacity <= 0) {
           particles.value.splice(k, 1);
           continue;
         }
 
-        // 開始繪製單個文字
         ctx.save();
         ctx.globalAlpha = p.opacity;
-        ctx.font = `bold ${p.fontSize}px Georgia, sans-serif`; // 💡 1. 改為襯線字體
-        ctx.fillStyle = '#000000';                        // 💡 2. 固定為純黑色
+        ctx.font = `bold ${p.fontSize}px Georgia, serif`;
+        ctx.fillStyle = '#000000'; // 固定純黑
         ctx.textAlign = 'center';
-
-        // 💡 3. 移除了 strokeText 兩行代碼（去邊框）
+        
         ctx.fillText(p.text, p.x, p.y); 
         ctx.restore();
       }
 
       // F-3. 繪製方塊之間的連接線條
       for (let i = 0; i < blocks.value.length; i++) {
+        const b1 = blocks.value[i];
+        if (!b1) continue;
+
         for (let j = i + 1; j < blocks.value.length; j++) {
-          const b1 = blocks.value[i];
           const b2 = blocks.value[j];
+          if (!b2) continue;
 
           const c1x = b1.x + b1.width / 2;
           const c1y = b1.y + b1.height / 2;
