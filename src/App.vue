@@ -174,10 +174,11 @@ const handleMouseLeave = () => {
 // --- 圖片處理 (壓縮並裁剪為 9:16) ---
 const handleImageUpload = (event: Event) => {
   const input = event.target as HTMLInputElement;
-  if (!input.files || input.files.length === 0) return;
+  // 💡 修正點：確保 input.files 存在且裡面真的有第一個檔案
+  if (!input.files || input.files.length === 0 || !input.files[0]) return;
 
   loading.value = true;
-  const file = input.files[0];
+  const file = input.files[0]; // 此時 TypeScript 確信它絕對是 File 型別（繼承自 Blob）
   const reader = new FileReader();
 
   reader.onload = (e) => {
@@ -213,15 +214,16 @@ const handleImageUpload = (event: Event) => {
 
 // --- 初始化方塊數據 ---
 const initBlocks = () => {
-  const types: FilterBlock['filterType'][] = ['mosaic', 'hueRotate', 'invert', 'grayscale', 'invert'];
-  const labels = ['Mosaic', 'HueRotate', 'Invert', 'Grayscale', 'Invert'];
+  const types: FilterBlock['filterType'][] = ['mosaic', 'hueRotate', 'invert', 'grayscale'];
+  const labels = ['Mosaic', 'HueRotate', 'Invert', 'Grayscale'];
 
   blocks.value = types.map((type, index) => {
-    const width = Math.random() * 60 + 100;
-    const height = Math.random() * 60 + 100; 
+    const width = Math.random() * 60 + 100;  // 100 ~ 160
+    const height = Math.random() * 60 + 100; // 100 ~ 160
     return {
       id: index,
-      label: labels[index],
+      // 💡 修正點：加上 || '' 確保萬一超出索引時，拿到的絕對是 string 而不是 undefined
+      label: labels[index] || 'Filter', 
       filterType: type,
       width,
       height,
@@ -303,8 +305,13 @@ const updatePhysics = () => {
     if (block.y + block.height >= canvasHeight) { block.y = canvasHeight - block.height; block.vy = -Math.abs(block.vy); }
 
     // D. 方塊間相互碰撞偵測
+    // D. 方塊間相互碰撞偵測
     for (let j = i + 1; j < blocks.value.length; j++) {
       const other = blocks.value[j];
+      
+      // 💡 修正點：如果 other 不存在（undefined），直接跳過，消除 TS18048 錯誤
+      if (!other) continue;
+
       const overlapX = Math.min(block.x + block.width, other.x + other.width) - Math.max(block.x, other.x);
       const overlapY = Math.min(block.y + block.height, other.y + other.height) - Math.max(block.y, other.y);
 
@@ -349,7 +356,7 @@ const updatePhysics = () => {
         other.vy = Math.max(-maxSpeed, Math.min(maxSpeed, other.vy));
       }
     }
-  });
+          
 
   // --- E. 畫布渲染 (文字粒子與線條共用同一個 Canvas 上下文) ---
   const canvas = lineCanvasRef.value;
